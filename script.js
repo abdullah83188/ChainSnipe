@@ -1,20 +1,6 @@
 const ethApiKey = "25F9Y3K2JMSU7EW8F1XJUV2G8C7V2N9J9C";
 const solApiKey = "397ced5f-5a44-46da-92c6-558071947f9a";
 
-async function isEthContract(address) {
-  const url = `https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${address}&apikey=${ethApiKey}`;
-  try {
-    const res = await fetch(url);
-    const data = await res.json();
-    if (data.result && data.result.length > 0) {
-      return data.result[0].ContractName !== "";
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 async function fetchEthTokenActivity(token) {
   const url = `https://api.etherscan.io/api?module=account&action=tokentx&contractaddress=${token}&page=1&offset=100&sort=desc&apikey=${ethApiKey}`;
   const res = await fetch(url);
@@ -22,19 +8,26 @@ async function fetchEthTokenActivity(token) {
   const txs = data.result || [];
 
   const wallets = {};
+  let checked = 0;
+
   for (const tx of txs) {
-    const isFromContract = await isEthContract(tx.from);
-    const isToContract = await isEthContract(tx.to);
-    if (isFromContract || isToContract) continue;
+    if (checked > 20) break; // Limit for speed/debug
 
-    const wallet = tx.from.toLowerCase() === token.toLowerCase() ? tx.to : tx.from;
-    const action = tx.to.toLowerCase() === wallet.toLowerCase() ? "BUY" : "SELL";
-    const amount = tx.value / Math.pow(10, tx.tokenDecimal);
-    const time = new Date(tx.timeStamp * 1000).toLocaleString();
-    const symbol = tx.tokenSymbol || "Token";
+    const from = tx.from.toLowerCase();
+    const to = tx.to.toLowerCase();
 
-    if (!wallets[wallet]) wallets[wallet] = [];
-    wallets[wallet].push({ action, amount, time, symbol, hash: tx.hash, token: tx.contractAddress });
+    if (from === token.toLowerCase() || to === token.toLowerCase()) {
+      const wallet = from === token.toLowerCase() ? to : from;
+      const action = to === wallet ? "BUY" : "SELL";
+      const amount = tx.value / Math.pow(10, tx.tokenDecimal);
+      const time = new Date(tx.timeStamp * 1000).toLocaleString();
+      const symbol = tx.tokenSymbol || "Token";
+
+      if (!wallets[wallet]) wallets[wallet] = [];
+      wallets[wallet].push({ action, amount, time, symbol, hash: tx.hash, token: tx.contractAddress });
+
+      checked++;
+    }
   }
 
   renderWallets(wallets, "ethereum");
@@ -42,27 +35,31 @@ async function fetchEthTokenActivity(token) {
 
 async function fetchSolTokenActivity(token) {
   const url = `https://api.helius.xyz/v0/tokens/${token}/rich-list?limit=50&api-key=${solApiKey}`;
-  const res = await fetch(url);
-  const data = await res.json();
+  try {
+    const res = await fetch(url);
+    const data = await res.json();
 
-  const wallets = {};
-  for (const acc of data) {
-    const owner = acc.owner;
-    const balance = acc.amount;
-    if (!owner || owner === "11111111111111111111111111111111") continue;
+    const wallets = {};
+    for (const acc of data) {
+      const owner = acc.owner;
+      const balance = acc.amount;
+      if (!owner || owner === "11111111111111111111111111111111") continue;
 
-    if (!wallets[owner]) wallets[owner] = [];
-    wallets[owner].push({
-      action: "HOLDING",
-      amount: balance,
-      time: new Date().toLocaleString(),
-      symbol: "---",
-      hash: "",
-      token
-    });
+      if (!wallets[owner]) wallets[owner] = [];
+      wallets[owner].push({
+        action: "HOLDING",
+        amount: balance,
+        time: new Date().toLocaleString(),
+        symbol: "---",
+        hash: "",
+        token
+      });
+    }
+
+    renderWallets(wallets, "solana");
+  } catch (err) {
+    document.getElementById("walletList").innerHTML = "❌ Error fetching Solana token data.";
   }
-
-  renderWallets(wallets, "solana");
 }
 
 function renderWallets(wallets, chain) {
@@ -111,3 +108,4 @@ function trackToken() {
     fetchSolTokenActivity(token);
   }
 }
+
