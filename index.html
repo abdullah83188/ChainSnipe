@@ -1,37 +1,74 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ChainSnipe Token Tracker</title>
-  <link rel="stylesheet" href="style.css" />
+  <meta charset="UTF-8">
+  <title>Universal Wallet Tracker</title>
   <script defer src="script.js"></script>
+  <style>
+    body {
+      background: #0e0e0e;
+      color: #f2f2f2;
+      font-family: Arial, sans-serif;
+      padding: 20px;
+    }
+
+    h1 {
+      text-align: center;
+      color: #66f;
+    }
+
+    .input-box {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-bottom: 30px;
+    }
+
+    input, button {
+      padding: 12px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: none;
+    }
+
+    button {
+      background: #007bff;
+      color: white;
+      cursor: pointer;
+    }
+
+    #results {
+      max-width: 800px;
+      margin: auto;
+      background: #1a1a1a;
+      padding: 20px;
+      border-radius: 10px;
+    }
+
+    .entry {
+      margin-bottom: 15px;
+      border-bottom: 1px solid #333;
+      padding-bottom: 10px;
+    }
+
+    .entry b {
+      color: #66ff99;
+    }
+
+    .entry code {
+      color: #ccc;
+      background: #222;
+      padding: 2px 4px;
+      border-radius: 4px;
+    }
+  </style>
 </head>
 <body>
-  <header>
-    <div class="logo-text">
-      <img src="banner.jpg" alt="ChainSnipe Logo" class="logo-img" />
-      <div>
-        <h1>ChainSnipe Token Tracker</h1>
-        <p>Enter a token contract address to see all human-operated wallets interacting with it</p>
-      </div>
-    </div>
-  </header>
-
-  <main>
-    <div class="input-box">
-      <input type="text" id="tokenAddress" placeholder="Enter Token Contract Address (ETH or SOL)">
-      <select id="chainSelect">
-        <option value="ethereum">Ethereum</option>
-        <option value="solana">Solana</option>
-      </select>
-      <button onclick="trackToken()">Track Token</button>
-    </div>
-
-    <div class="results">
-      <h2>👤 Human Wallet Activity</h2>
-      <div id="walletList">No data yet...</div>
-    </div>
-  </main>
+  <h1>🧾 Universal Wallet Tracker</h1>
+  <div class="input-box">
+    <input type="text" id="walletInput" placeholder="Paste any wallet address..." />
+    <button onclick="trackWallet()">Track Wallet</button>
+  </div>
+  <div id="results">Waiting for input...</div>
 </body>
 </html>
