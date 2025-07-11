@@ -1,132 +1,134 @@
-const ethApiKey = "25F9Y3K2JMSU7EW8F1XJUV2G8C7V2N9J9C";
-const solApiKey = "397ced5f-5a44-46da-92c6-558071947f9a";
+const apis = {
+  ethereum: {
+    label: "Ethereum",
+    key: "25F9Y3K2JMSU7EW8F1XJUV2G8C7V2N9J9C",
+    url: "https://api.etherscan.io/api"
+  },
+  bsc: {
+    label: "BNB Chain",
+    key: "CXTB4IUT31N836G93ZI3YQBEWBQEGGH5QS",
+    url: "https://api.bscscan.com/api"
+  },
+  polygon: {
+    label: "Polygon",
+    key: "U7IUT7CI3N8369QBWBEGS2Z93ZI3YGXTHG",
+    url: "https://api.polygonscan.com/api"
+  },
+  arbitrum: {
+    label: "Arbitrum",
+    key: "G93ZI3YGXTHG9QBEWBQEGG75CXTB4IUT3",
+    url: "https://api.arbiscan.io/api"
+  }
+};
 
-// Fast check for ETH contract (with timeout fallback)
-async function isEthContract(address) {
-  const url = `https://api.etherscan.io/api?module=contract&action=getsourcecode&address=${address}&apikey=${ethApiKey}`;
+const heliusKey = "397ced5f-5a44-46da-92c6-558071947f9a";
+
+function isSolana(address) {
+  return /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address) && !address.startsWith("0x");
+}
+
+function isEvm(address) {
+  return address.startsWith("0x") && address.length === 42;
+}
+
+async function isContract(chain, address) {
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 2000); // timeout in 2s
-    const res = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+    const { key, url } = apis[chain];
+    const res = await fetch(`${url}?module=contract&action=getsourcecode&address=${address}&apikey=${key}`);
     const data = await res.json();
     return data.result[0]?.ContractName !== "";
   } catch {
-    return false; // fallback = human
+    return false;
   }
 }
 
-async function fetchEthTokenActivity(token) {
-  const url = `https://api.etherscan.io/api?module=account&action=tokentx&contractaddress=${token}&page=1&offset=50&sort=desc&apikey=${ethApiKey}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  const txs = data.result || [];
+async function fetchEvmData(wallet) {
+  const tasks = Object.entries(apis).map(async ([chain, { key, url, label }]) => {
+    const txURL = `${url}?module=account&action=tokentx&address=${wallet}&page=1&offset=25&sort=desc&apikey=${key}`;
+    try {
+      const res = await fetch(txURL);
+      const data = await res.json();
+      if (!data.result || data.result.length === 0) return [];
 
-  const wallets = {};
-
-  for (const tx of txs) {
-    const from = tx.from.toLowerCase();
-    const to = tx.to.toLowerCase();
-    const wallet = from === token.toLowerCase() ? to : from;
-    const action = to === wallet ? "BUY" : "SELL";
-    const amount = tx.value / Math.pow(10, tx.tokenDecimal);
-    const time = new Date(tx.timeStamp * 1000).toLocaleString();
-    const symbol = tx.tokenSymbol || "Token";
-
-    if (!wallets[wallet]) {
-      const isHuman = !(await isEthContract(wallet));
-      wallets[wallet] = {
-        isHuman: isHuman ? "🧍 Human" : "🤖 Contract",
-        txs: []
-      };
+      return data.result.map(tx => ({
+        chain: label,
+        action: tx.to.toLowerCase() === wallet.toLowerCase() ? "BUY" : "SELL",
+        amount: (Number(tx.value) / Math.pow(10, tx.tokenDecimal || 18)).toFixed(4),
+        date: new Date(tx.timeStamp * 1000).toLocaleString(),
+        token: tx.tokenSymbol || "TOKEN",
+        hash: tx.hash,
+        explorer: `https://${chain === "bsc" ? "bscscan" : chain + "scan"}.com/tx/${tx.hash}`
+      }));
+    } catch {
+      return [];
     }
+  });
 
-    wallets[wallet].txs.push({ action, amount, time, symbol, hash: tx.hash, token: tx.contractAddress });
-  }
+  const allTx = (await Promise.all(tasks)).flat();
+  const isHuman = !(await isContract("ethereum", wallet));
+  const type = isHuman ? "🧍 Human" : "🤖 Bot";
 
-  renderWallets(wallets, "ethereum");
+  return allTx.map(tx => ({ ...tx, type }));
 }
 
-async function fetchSolTokenActivity(token) {
-  const url = `https://api.helius.xyz/v0/tokens/${token}/rich-list?limit=50&api-key=${solApiKey}`;
+async function fetchSolanaData(wallet) {
+  const url = `https://api.helius.xyz/v0/addresses/${wallet}/tokens?api-key=${heliusKey}`;
   try {
     const res = await fetch(url);
     const data = await res.json();
+    if (!data || data.length === 0) return [];
 
-    const wallets = {};
-    for (const acc of data) {
-      const owner = acc.owner;
-      const balance = acc.amount;
-      if (!owner || owner === "11111111111111111111111111111111") continue;
-
-      if (!wallets[owner]) {
-        wallets[owner] = {
-          isHuman: "🧍 Assumed",
-          txs: []
-        };
-      }
-
-      wallets[owner].txs.push({
-        action: "HOLDING",
-        amount: balance,
-        time: new Date().toLocaleString(),
-        symbol: "---",
-        hash: "",
-        token
-      });
-    }
-
-    renderWallets(wallets, "solana");
+    return data.map(token => ({
+      chain: "Solana",
+      action: "HOLDING",
+      amount: token.amount,
+      date: new Date().toLocaleString(),
+      token: token.tokenName || token.mint,
+      explorer: `https://solscan.io/account/${wallet}`,
+      type: "🧍 Assumed"
+    }));
   } catch {
-    document.getElementById("walletList").innerHTML = "❌ Error fetching Solana wallets.";
+    return [];
   }
 }
 
-function renderWallets(wallets, chain) {
-  const container = document.getElementById("walletList");
-  container.innerHTML = "";
+async function trackWallet() {
+  const wallet = document.getElementById("walletInput").value.trim();
+  const box = document.getElementById("results");
 
-  const entries = Object.entries(wallets);
-  if (!entries.length) {
-    container.innerHTML = "❌ No wallets found.";
-    return;
-  }
+  if (!wallet) return (box.innerHTML = "⚠️ Enter a wallet address.");
 
-  for (const [wallet, data] of entries) {
-    const card = document.createElement("div");
-    card.className = "wallet-card";
+  box.innerHTML = "⏳ Detecting and fetching data...";
 
-    card.innerHTML = `<b>Wallet:</b> ${wallet} <span>${data.isHuman}</span><br><br>`;
-
-    for (const tx of data.txs) {
-      card.innerHTML += `
-        ${tx.action} <b>${tx.amount.toFixed(4)}</b> ${tx.symbol} @ ${tx.time}<br>
-        ${
-          chain === "ethereum"
-            ? `<a href="https://etherscan.io/tx/${tx.hash}" target="_blank">🔍 TX</a> | <a href="https://dexscreener.com/ethereum/${tx.token}" target="_blank">📈 Chart</a>`
-            : `<a href="https://solscan.io/account/${wallet}" target="_blank">🔍 Wallet</a> | <a href="https://pump.fun/${tx.token}" target="_blank">📈 Chart</a>`
-        }
-        <br><hr>`;
-    }
-
-    container.appendChild(card);
-  }
-}
-
-function trackToken() {
-  const token = document.getElementById("tokenAddress").value.trim();
-  const chain = document.getElementById("chainSelect").value;
-  const container = document.getElementById("walletList");
-  container.innerHTML = "⏳ Fetching wallet activity...";
-
-  if (!token) {
-    container.innerHTML = "⚠️ Enter a token contract address.";
-    return;
-  }
-
-  if (chain === "ethereum") {
-    fetchEthTokenActivity(token);
+  let allData = [];
+  if (isSolana(wallet)) {
+    allData = await fetchSolanaData(wallet);
+  } else if (isEvm(wallet)) {
+    allData = await fetchEvmData(wallet);
   } else {
-    fetchSolTokenActivity(token);
+    box.innerHTML = "❌ Unknown or unsupported wallet format.";
+    return;
   }
+
+  if (!allData.length) {
+    box.innerHTML = "❌ No activity found for this wallet.";
+    return;
+  }
+
+  let html = `<h2>Activity for ${wallet}</h2><hr>`;
+  for (const tx of allData) {
+    html += `
+      <div class="entry">
+        <b>Chain:</b> ${tx.chain}<br>
+        <b>Action:</b> ${tx.action}<br>
+        <b>Token:</b> ${tx.token}<br>
+        <b>Amount:</b> ${tx.amount}<br>
+        <b>Date:</b> ${tx.date}<br>
+        <b>Type:</b> ${tx.type}<br>
+        <a href="${tx.explorer}" target="_blank">🔍 View</a>
+      </div>
+    `;
+  }
+
+  box.innerHTML = html;
 }
